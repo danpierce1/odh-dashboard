@@ -602,6 +602,16 @@ func (kc *TokenKubernetesClient) getServingRuntime(ctx context.Context, namespac
 	return &servingRuntime, nil
 }
 
+// Helper method to extract served model name from container args
+func (kc *TokenKubernetesClient) extractServedModelNameFromArgs(containerArgs []string) string {
+	for i, arg := range containerArgs {
+		if arg == "--served-model-name" && i+1 < len(containerArgs) {
+			return containerArgs[i+1]
+		}
+	}
+	return ""
+}
+
 // Helper method to extract serving runtime display name from annotations
 func (kc *TokenKubernetesClient) extractServingRuntimeFromAnnotations(sr *kservev1alpha1.ServingRuntime) string {
 	if sr == nil || sr.Annotations == nil {
@@ -1245,7 +1255,6 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 			kc.Logger.Error("failed to extract endpoint from LLMInferenceService", "modelID", modelID, "error", extractErr)
 			return nil, fmt.Errorf("failed to extract endpoint from LLMInferenceService for model '%s': %w", modelID, extractErr)
 		}
-
 		// Extract additional metadata from the LLMInferenceService
 		metadata := map[string]interface{}{}
 		if targetLLMSVC.Annotations != nil {
@@ -1325,9 +1334,28 @@ func (kc *TokenKubernetesClient) getModelDetailsFromServingRuntime(ctx context.C
 	// All models are LLM models using vllm-inference
 	modelType := "llm"
 
-	kc.Logger.Debug("Using InferenceService for model", "modelID", modelID, "endpoint", internalURLStr)
+	// Try to get the actual model name from ServingRuntime container args
+	actualModelID := modelID // Default to the passed-in modelID
+	servingRuntimeName := kc.extractServingRuntimeName(targetISVC)
+	if servingRuntimeName != "" {
+		servingRuntime, srErr := kc.getServingRuntime(ctx, namespace, servingRuntimeName)
+		if srErr != nil {
+			kc.Logger.Warn("failed to fetch ServingRuntime for InferenceService", "error", srErr, "servingRuntime", servingRuntimeName)
+		} else if servingRuntime != nil && len(servingRuntime.Spec.Containers) > 0 {
+			// Extract --served-model-name from container args
+			containerArgs := servingRuntime.Spec.Containers[0].Args
+			servedModelName := kc.extractServedModelNameFromArgs(containerArgs)
+			if servedModelName != "" {
+				actualModelID = servedModelName
+				kc.Logger.Debug("found served-model-name in container args", "servedModelName", servedModelName, "containerArgs", containerArgs)
+			} else {
+				kc.Logger.Debug("no served-model-name found in container args, using InferenceService name", "containerArgs", containerArgs)
+			}
+		}
+	}
+	kc.Logger.Debug("Using InferenceService for model", "modelID", actualModelID, "endpoint", internalURLStr)
 	return map[string]interface{}{
-		"model_id":     strings.ReplaceAll(modelID, ":", "-"),
+		"model_id":     strings.ReplaceAll(actualModelID, ":", "-"),
 		"model_type":   modelType,
 		"metadata":     metadata,
 		"endpoint_url": internalURLStr,

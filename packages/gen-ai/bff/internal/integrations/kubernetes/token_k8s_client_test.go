@@ -3,8 +3,19 @@ package kubernetes
 import (
 	"context"
 	"log/slog"
+	"os"
 	"testing"
 	"time"
+
+	kservev1alpha1 "github.com/kserve/kserve/pkg/apis/serving/v1alpha1"
+	kservev1beta1 "github.com/kserve/kserve/pkg/apis/serving/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"knative.dev/pkg/apis"
+	duckv1 "knative.dev/pkg/apis/duck/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/opendatahub-io/gen-ai/internal/constants"
 	"github.com/opendatahub-io/gen-ai/internal/integrations"
@@ -427,4 +438,64 @@ func TestHeadlessServicePortLogic(t *testing.T) {
 			assert.Equal(t, tt.expectedAdded, shouldAddPort, tt.description)
 		})
 	}
+}
+
+func TestGetModelDetailsFromServingRuntime_ServedModelName(t *testing.T) {
+	tests := []struct {
+		name            string
+		containerArgs   []string
+		expectedModelID string
+	}{
+		{"with --served-model-name", []string{"--model", "/mnt/models", "--served-model-name", "my-custom-name"}, "my-custom-name"},
+		{"without --served-model-name", []string{"--model", "/mnt/models"}, "my-isvc"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, isvcName := setupTestClient(t, tt.containerArgs)
+			modelDetails, err := client.getModelDetailsFromServingRuntime(context.Background(), "test-ns", isvcName)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedModelID, modelDetails["model_id"].(string))
+		})
+	}
+}
+
+func setupTestClient(t *testing.T, containerArgs []string) (*TokenKubernetesClient, string) {
+	scheme := runtime.NewScheme()
+	assert.NoError(t, clientgoscheme.AddToScheme(scheme))
+	assert.NoError(t, kservev1alpha1.AddToScheme(scheme))
+	assert.NoError(t, kservev1beta1.AddToScheme(scheme))
+
+	runtimeName := "vllm-runtime"
+	isvcName := "my-isvc"
+
+	sr := &kservev1alpha1.ServingRuntime{
+		ObjectMeta: metav1.ObjectMeta{Name: runtimeName, Namespace: "test-ns"},
+		Spec: kservev1alpha1.ServingRuntimeSpec{
+			ServingRuntimePodSpec: kservev1alpha1.ServingRuntimePodSpec{
+				Containers: []corev1.Container{{Name: "kserve-container", Args: containerArgs}},
+			},
+		},
+	}
+
+	isvc := &kservev1beta1.InferenceService{
+		ObjectMeta: metav1.ObjectMeta{Name: isvcName, Namespace: "test-ns"},
+		Spec: kservev1beta1.InferenceServiceSpec{
+			Predictor: kservev1beta1.PredictorSpec{
+				Model: &kservev1beta1.ModelSpec{Runtime: &runtimeName},
+			},
+		},
+		Status: kservev1beta1.InferenceServiceStatus{
+			Address: &duckv1.Addressable{
+				URL: &apis.URL{Scheme: "http", Host: isvcName + ".test-ns.svc.cluster.local"},
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sr, isvc).Build()
+	return &TokenKubernetesClient{Client: fakeClient, Logger: logger}, isvcName
 }

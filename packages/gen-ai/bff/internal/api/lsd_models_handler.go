@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -20,8 +22,14 @@ func (app *App) LlamaStackModelsHandler(w http.ResponseWriter, r *http.Request, 
 		app.serverErrorResponse(w, r, err)
 		return
 	}
+	if modelsJSON, err := json.MarshalIndent(models, "", "  "); err == nil {
+		log.Printf(">>>> Retrieved models:\n%s", string(modelsJSON))
+	}
 
 	models = filterModels(models, app.config.FilteredModelKeywords)
+	if filteredJSON, err := json.MarshalIndent(models, "", "  "); err == nil {
+		log.Printf(">>>> Filtered models:\n%s", string(filteredJSON))
+	}
 
 	response := ModelsResponse{
 		Data: models,
