@@ -11,6 +11,7 @@ import {
   enableGenAiFeatures,
   disableGenAiFeatures,
   cleanupServingRuntimeTemplate,
+  verifyGenAiStudioAvailable,
 } from '../../../utils/oc_commands/genAi';
 import { getCustomResource } from '../../../utils/oc_commands/customResources';
 import { retryableBefore } from '../../../utils/retryableHooks';
@@ -189,6 +190,8 @@ describe('Verify Gen AI Namespace - Creation and Connection', () => {
       cy.step('Log into the application');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
 
+      verifyGenAiStudioAvailable();
+
       cy.step(`Navigate to the Project list tab and search for ${projectName}`);
       projectListPage.navigate();
       projectListPage.filterProjectByName(projectName);
@@ -233,6 +236,7 @@ describe('Verify Gen AI Namespace - Creation and Connection', () => {
       modelServingWizard.findNextButton().click();
 
       cy.step('Enable AI asset endpoint');
+      modelServingWizard.findModelPlaygroundAvailabilitySection().should('be.visible');
       modelServingWizard.findSaveAiAssetCheckbox().click();
 
       modelServingWizard.findNextButton().click();

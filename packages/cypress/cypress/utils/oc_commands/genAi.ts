@@ -238,6 +238,26 @@ export const disableGenAiFeatures = (): Cypress.Chainable<CommandLineResult> => 
 };
 
 /**
+ * Assert that the Gen AI studio sidebar button is visible on the current page.
+ * Proves the PLUGIN_GEN_AI area (including DSC requiredComponents) has resolved
+ * as available in the browser. Call after cy.visitWithLogin to guard against
+ * stale DSC status from a prior page load.
+ */
+export const verifyGenAiStudioAvailable = (): Cypress.Chainable<boolean> => {
+  cy.step('Verify Gen AI studio area is available');
+  return findInSidebar('button:contains("Gen AI studio")').then((isVisible) => {
+    if (!isVisible) {
+      throw new Error(
+        'Gen AI studio not found in sidebar after settling. ' +
+          'PLUGIN_GEN_AI area is not available — DSC status may not reflect llamastackoperator as Managed.',
+      );
+    }
+    cy.log('Gen AI studio confirmed in sidebar');
+    return cy.wrap(true);
+  });
+};
+
+/**
  * Cleanup serving runtime template by ServingRuntime name.
  * Searches for templates containing a ServingRuntime with the given name.
  *

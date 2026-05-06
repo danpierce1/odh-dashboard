@@ -1248,6 +1248,10 @@ class ModelServingWizard extends Wizard {
     return cy.findByTestId(`env-var-value-${value}`);
   }
 
+  findModelPlaygroundAvailabilitySection() {
+    return cy.findByTestId('model-playground-availability');
+  }
+
   findSaveAiAssetCheckbox() {
     return cy.findByTestId('save-as-ai-asset-checkbox');
   }
