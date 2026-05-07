@@ -187,7 +187,15 @@ describe('Verify Gen AI Namespace - Creation and Connection', () => {
       }
 
       cy.step('Log into the application');
+      cy.intercept('GET', '/api/dsc/status').as('dscStatus');
+      cy.intercept('GET', '/api/config').as('dashboardConfig');
       cy.visitWithLogin('/', HTPASSWD_CLUSTER_ADMIN_USER);
+      cy.wait('@dscStatus')
+        .its('response.body.components.llamastackoperator.managementState')
+        .should('equal', 'Managed');
+      cy.wait('@dashboardConfig')
+        .its('response.body.spec.dashboardConfig.genAiStudio')
+        .should('equal', true);
 
       cy.step(`Navigate to the Project list tab and search for ${projectName}`);
       projectListPage.navigate();
